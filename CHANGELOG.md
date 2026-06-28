@@ -1,19 +1,41 @@
 # Changelog
 
+## v1.1.0
+
+### New Features
+
+- Added settings menu (linked from main menu and game scene) with the following options:
+  - Edit name (moved here from main menu)
+  - Edit number of guesses in a game (requires game restart to take effect)
+  - Edit the size of character cards
+- Added keyboard navigation to the name input scene
+
+### Styling/UX Changes
+
+- Page elements should no longer be hidden by the navigation bar on mobile when the page can fit them
+- Improved appearance on mobile in various ways
+- Miscellaneous minor changes
+
+### Bugfixes
+
+- Fixed a bug where when using mixed mouse and keyboard controls, select boxes would occasionally enter a glitched state
+- Fixed a bug where marked cards wouldn't appear marked when inspected
+- Fixed a bug where right-clicking an image while inspecting it wouldn't mark it
+
 ## v1.0.3
 
-## API/Modding Changes
+### API/Modding Changes
 
 - Added ability to define custom card widths and heights in a character set's `config.json` file
 
-## Styling/UX Changes
+### Styling/UX Changes
 
 - Adjusted display of top-row buttons to fit the window better in widths of ~800-900px
 - If the set of character cards doesn't fully fill the available space, the "Cards left" display will now be positioned closer to it
 
 ## v1.0.2
 
-## Styling/UX Changes
+### Styling/UX Changes
 
 - Replaced previous logo with new custom logo, since the previous logo contained Seek's branding and it's probably best to not give the impression that this version is maintained by Seek
 

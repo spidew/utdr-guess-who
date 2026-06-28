@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" scene="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, minimum-scale=0.5">
   <link href="img/icon.png" type="image/png" rel="icon">
   <title>UTDR Guess Who Unlimited</title>
 
@@ -30,6 +30,9 @@
     </div>
     <div class="inspect-img-frame">
       <div class="bg"></div>
+      <div class="character-question-marker center-container">
+        <div class="character-question-icon">?</div>
+      </div>
       <img class="inspect-img" draggable="false">
     </div>
   </div>
@@ -38,7 +41,7 @@
 <!-- Main page content -->
 
 <body>
-  <div class="max-width-box">
+  <div class="max-width-box unselectable">
 
     <!-- Name entry scene -->
     <div id="name-scene" class="scene hidden">
@@ -51,22 +54,23 @@
         <input type="text" id="name-input" autocomplete="off">
         <br>
         <label for="remember-name">
-          <input type="checkbox" name="" id="remember-name">
+          <input type="checkbox" name="remember-name" id="remember-name" class="shift-up-small">
           <span>REMEMBER ME</span>
         </label>
       </div>
       <button type="button" id="name-submit">Continue</button>
     </div>
 
+
     <!-- Main menu scene -->
     <div id="menu-scene" class="scene hidden">
       <div id="menu-top-left">
         <img src="img/logo-no-bg.png" alt="UTDR Guess Who Unlimited Logo" id="menu-logo" class="small-bottom-margin">
-        <p id="menu-version-line" class="med-left-margin">v1.0 - <a target="_blank"
+        <p id="menu-version-line" class="med-left-margin">v1.1.0 - <a target="_blank"
             href="https://github.com/wearsnomask/utdr-guess-who/blob/main/CHANGELOG.md#v10">What's new?</a></p>
         <p id="menu-name-display" class="med-left-margin">
           <span class="grey-text">Chosen name: </span>
-          <span id="menu-name"></span>
+          <span class="player-name"></span>
         </p>
       </div>
       <div id="menu-options">
@@ -91,7 +95,7 @@
               class="game-loading-message">Loading... </span><span
               class="game-loading-message game-loading-percent hidden">0%</span>
           </li>
-          <li><a href="javascript:void(0)" tabindex="1" id="menu-edit-name">EDIT NAME</a></li>
+          <li><a href="javascript:void(0)" tabindex="1" id="menu-settings">SETTINGS</a></li>
           <li><a href="javascript:void(0)" tabindex="1" id="menu-instructions">INSTRUCTIONS</a></li>
           <li><a href="javascript:void(0)" tabindex="1" id="menu-credits">CREDITS</a></li>
         </ul>
@@ -142,6 +146,8 @@
             title="Show available keyboard, mobile, and mouse controls">Controls</button>
           <button tabindex="1" class="game-instructions small-screen-only small no-margin"
             title="Show instructions on how to play the game">Instructions</button>
+          <button tabindex="1" class="game-settings small-screen-only small no-margin"
+            title="Adjust game settings (some won't apply until game is restarted)">Settings</button>
         </div>
 
         <p id="small-screen-name-display" class="small-screen-only"><span class="player-name"></span>'s POV</p>
@@ -149,7 +155,7 @@
         <div id="your-char-display" class="center-container">
 
           <p class="center-text">YOU ARE:</p>
-          <p id="your-char-name"></p>
+          <p id="your-char-name" class="selectable"></p>
           <div id="your-char-img-frame" class="img-frame">
             <div class="bg"></div>
             <img id="your-char-img" draggable="false">
@@ -202,13 +208,16 @@
             title="Show available keyboard, mobile, and mouse controls">Controls</button>
           <button tabindex="3" class="game-instructions small no-margin"
             title="Show instructions on how to play the game">Instructions</button>
+          <button tabindex="3" class="game-settings small no-margin"
+            title="Adjust game settings (some won't apply until game is restarted)">Settings</button>
         </div>
 
       </div>
     </div>
 
+
     <!-- Instructions scene -->
-    <div id="instructions-scene" class="scene hidden">
+    <div id="instructions-scene" class="scene hidden selectable">
       <div class="center-container">
         <h3>INSTRUCTIONS</h3>
       </div>
@@ -244,12 +253,12 @@
         ask subjective questions, without the "yes" or "no" limit. (Example: "What's your character's favorite
         Pokemon?")
       </p>
-      <button id="instructions-back" class="scene-back no-bottom-margin">Back</button>
+      <button id="instructions-back" class="no-bottom-margin">Back</button>
     </div>
 
 
     <!-- Controls scene -->
-    <div id="controls-scene" class="scene hidden">
+    <div id="controls-scene" class="scene hidden selectable">
       <div class="center-container">
         <h3>CONTROLS</h3>
       </div>
@@ -280,18 +289,98 @@
         <div class="right-column">Open/close notes (use "Notes" button on mouse/mobile instead)</div>
       </div>
 
-      <button id="controls-back" class="scene-back no-bottom-margin">Back</button>
+      <button id="controls-back" class="no-bottom-margin">Back</button>
     </div>
+
+
+    <!-- Settings scene -->
+    <div id="settings-scene" class="scene hidden">
+      <div class="center-container">
+        <h3>SETTINGS</h3>
+      </div>
+      <div id="settings-grid">
+        <div class="left-column empty">
+          <a href="javascript:void(0)" tabindex="1" id="settings-edit-name">EDIT NAME</a>
+        </div>
+        <div class="mid-column"></div>
+        <div class="right-column empty"></div>
+
+        <div class="left-column">
+          <div tabindex="1" id="num-guesses-label" class="focusable">Number of
+            guesses:</div>
+        </div>
+        <div class="mid-column">
+          <select name="num-guesses-select" id="num-guesses-select" class="after-focusable" tabindex="-1">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3" selected>3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+            <option value="6">6</option>
+            <option value="7">7</option>
+            <option value="8">8</option>
+            <option value="9">9</option>
+            <option value="10">10</option>
+          </select>
+        </div>
+        <div class="right-column empty"></div>
+
+        <div class="left-column">
+          <div tabindex="1" id="card-scale-label" class="focusable">Card scale:</div>
+        </div>
+        <div class="mid-column">
+          <select name="card-scale-select" id="card-scale-select" class="after-focusable" tabindex="-1">
+            <option value="1">50%</option>
+            <option value="1.5">75%</option>
+            <option value="2" selected>100%</option>
+            <option value="3">150%</option>
+            <option value="4">200%</option>
+            <option value="5">250%</option>
+            <option value="6">300%</option>
+            <option value="7">350%</option>
+            <option value="8">400%</option>
+          </select>
+        </div>
+        <div class="right-column">
+          <div id="example-character-card">
+            <div class="character-img-frame img-frame">
+              <div class="bg"></div>
+              <img id="example-character-img" class="character-img" draggable="false" src="img/annoying-dog-card.png"
+                title="Example character card">
+            </div>
+          </div>
+        </div>
+
+        <div class="left-column">
+          <label tabindex="-1" for="remember-settings" id="card-scale-label" class="before-focusable">Remember
+            settings:</label>
+        </div>
+        <div class="mid-column">
+          <input type="checkbox" name="remember-settings" id="remember-settings" class="focusable" tabindex="1">
+        </div>
+        <div class="right-column empty"></div>
+
+        <div class="left-column">
+          <button id="settings-restore-default" class="no-margin small">Restore<br>Defaults</button>
+        </div>
+        <div class="mid-column">
+          <button id="settings-restore-init" class="no-margin small">Restore<br>Saved</button>
+        </div>
+        <div class="right-column empty"></div>
+      </div>
+      <button id="settings-back" class="no-bottom-margin">Back</button>
+    </div>
+
 
     <!-- Credits scene -->
     <div id="credits-scene" class="scene hidden">
-      <div class="center-container">
+      <div class="center-container selectable">
         <h3>CREDITS</h3>
       </div>
 
-      <div class="credits-item">
+      <div class="credits-item selectable">
         <img src="img/annoying-dog-icon.png" alt="Toby Fox icon">
-        <div>
+        <div class="credits-text">
           <h4>Toby Fox, Temmie Chang, and team</h4>
           Original Undertale and Deltarune games and character designs
           <ul>
@@ -300,9 +389,9 @@
           </ul>
         </div>
       </div>
-      <div class="credits-item">
+      <div class="credits-item selectable">
         <img src="img/seek-icon.jpg" alt="Seek icon">
-        <div>
+        <div class="credits-text">
           <h4>Seek's stuff</h4>
           Original concept and design for Deltarune Guess Who game
           <ul>
@@ -313,9 +402,9 @@
           </ul>
         </div>
       </div>
-      <div class="credits-item">
+      <div class="credits-item selectable">
         <img src="img/charlotte-icon.jpg" alt="Charlotte Wears No Mask icon">
-        <div>
+        <div class="credits-text">
           <h4>Charlotte Wears No Mask</h4>
           Wrote this version of the Guess Who game
           <ul>
@@ -332,7 +421,7 @@
         </p>
       </div>
 
-      <button id="credits-back" class="scene-back no-bottom-margin">Back</button>
+      <button id="credits-back" class="no-bottom-margin">Back</button>
     </div>
 
   </div>

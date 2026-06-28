@@ -72,6 +72,7 @@ const MENU_SCENE = document.getElementById("menu-scene");
 const GAME_SCENE = document.getElementById("game-scene");
 const INSTRUCTIONS_SCENE = document.getElementById("instructions-scene");
 const CONTROLS_SCENE = document.getElementById("controls-scene");
+const SETTINGS_SCENE = document.getElementById("settings-scene");
 const CREDITS_SCENE = document.getElementById("credits-scene");
 
 // Other constants
@@ -79,12 +80,16 @@ const SCREEN_SIZE_BREAKPOINT = 800;
 
 // Globals
 
-// The previously loaded scene, as a target for any Back buttons
-let lastScene = null;
+// The scenes the user as traversed, so we can go back. The final item will always be the current scene, and second-to-
+// final will be the previous scene, etc.
+const lSceneStack = []
 
 // State locks
 let sceneSwitching = false;
 let gameLoading = false;
+
+// Initial setting values
+const initSettings = {};
 
 // Loaded info about all available character sets
 let lCharsetDirs = null;
@@ -94,6 +99,26 @@ let tauriMode = false;
 
 // Functions
 // ---------
+
+/**
+ * Sets the selected option in a select box to the one that has the provided value
+ * @param {Element} el The select element
+ * @param {str} val The desired option value
+ */
+function setSelectByValue(el, val) {
+  const lOptions = el.querySelectorAll("option");
+  let iTarget = -1;
+  lOptions.forEach((optEl, i) => {
+    if (optEl.value == val)
+      iTarget = i;
+    optEl.removeAttribute("selected");
+  });
+
+  if (iTarget >= 0) {
+    lOptions[iTarget].setAttribute("selected", "true");
+  }
+  el.value = lOptions[iTarget].value;
+}
 
 /**
  * Stores a cookie with the provided information
@@ -113,7 +138,7 @@ function setCookie(oItems, daysToExpire = 365) {
     sItems += `${key}=${value};`
   }
 
-  document.cookie = sItems + sExpiry + ";path=/";
+  document.cookie = encodeURIComponent(sItems + sExpiry + ";path=/");
 }
 
 /**
@@ -126,7 +151,7 @@ function deleteCookie() {
   expTime.setTime(expTime.getTime() - (24 * 60 * 60 * 1000));
   let sExpiry = "expires=" + expTime.toUTCString();
 
-  document.cookie = "name=;" + sExpiry + ";path=/";
+  document.cookie = encodeURIComponent(sExpiry + ";path=/");
 }
 
 /**
@@ -146,33 +171,135 @@ function getCookie() {
 }
 
 /**
- * Switch to target scene
- * @param {Element} newScene 
+ * Load a saved setting
+ * @param {str} key The name of the setting
+ * @param {() => null | null} onFound Callback if the setting is found saved
+ * @param {() => null | null} onNotFound Callback if the setting is not found saved
+ * @param {() => null | null} onCookie Callback if the setting is found in the cookie
+ * @param {() => null | null} onNotCookie Callback if the setting is not found in the cookie
  */
-function switchScene(newScene = MENU_SCENE) {
+function loadSetting(key, onFound = null, onNotFound = null, onCookie = null, onNotCookie = null) {
+
+  let found = false;
+  let foundInCookie = false;
+
+  // Try to find the setting, checking in the cookie first, or else the session storage
+  if (cookieData[key]) {
+    found = foundInCookie = true;
+    initSettings[key] = sessionStorage[key] = cookieData[key];
+  } else if (sessionStorage.getItem(key)) {
+    found = true;
+    initSettings[key] = sessionStorage[key];
+  } else {
+    initSettings[key] = null;
+  }
+
+  // Call the appropriate callbacks
+  if (found) {
+    if (onFound)
+      onFound();
+  } else {
+    if (onNotFound)
+      onNotFound();
+  }
+  if (foundInCookie) {
+    if (onCookie)
+      onCookie();
+  } else {
+    if (onNotCookie)
+      onNotCookie();
+  }
+
+}
+
+/**
+ * Get the currently-active scene
+ * @returns {Element}
+ */
+function getCurrentScene() {
+  if (lSceneStack.length > 0)
+    return lSceneStack.at(-1);
+  return null;
+}
+
+/**
+ * Get the previously-active scene
+ * @returns {Element}
+ */
+function getLastScene() {
+  if (lSceneStack.length > 1)
+    return lSceneStack.at(-2);
+  return null;
+}
+
+/**
+ * Remove any duplicates from the scene stack
+ */
+function cleanSceneStack() {
+
+  // Construct a clean stack which only contains unique scenes
+  const lCleanSceneStack = [];
+  for (const scene of lSceneStack) {
+    if (!lCleanSceneStack.includes(scene))
+      lCleanSceneStack.push(scene);
+  }
+
+  // Check if the scene stack is already clean
+  if (lSceneStack.length == lCleanSceneStack.length)
+    return;
+
+  // Fix the scene stack
+  lSceneStack.length = lCleanSceneStack.length;
+  for (let i = 0; i < lSceneStack.length; ++i) {
+    lSceneStack[i] = lCleanSceneStack[i];
+  }
+}
+
+/**
+ * Switch to target scene
+ * @param {Element | null} newScene The scene to switch to. If null, will switch to the previous scene
+ */
+function switchScene(newScene = null) {
 
   // Check for scene switch lock so we don't overlap scene switches
   if (sceneSwitching)
     return;
-  sceneSwitching = true;
 
-  // Find the current scene, deactivate it, and mark it as the last scene
-  for (let el of L_SCENES) {
-    if (!el.classList.contains("hidden")) {
-      el.classList.add("hidden");
+  // Check if we're switching to the last scene
+  if (newScene == null || newScene instanceof Event) {
+    newScene = getLastScene();
 
-      // Failsafe in case something goes wrong - we don't want the lastScene to ever be the current scene, so we check
-      // to make sure this won't somehow happen
-      if (el !== newScene)
-        lastScene = el;
-
-      break;
-    }
+    // If `newScene` is still null, that means there is no last scene, so cancel the switch
+    if (newScene == null)
+      return;
   }
 
-  // Activate the new scene
+  const currentScene = getCurrentScene();
+
+  // If `newScene` is the current scene, cancel the switch. And just in case this occurred because the last scene in the
+  // stack is the same as the current scene (shouldn't normally happen), clean up the scene stack for good measure
+  if (newScene == currentScene) {
+    cleanSceneStack();
+    return;
+  }
+
+  // Adjust the scene stack as appropriate for this change
+
+  if (!lSceneStack.includes(newScene)) {
+    // If the new scene isn't in the stack, add it
+    lSceneStack.push(newScene);
+  } else {
+    // Rewind the stack back to where the new scene is in it
+    lSceneStack.length = lSceneStack.findIndex((el) => el == newScene) + 1;
+  }
+
+  // Perform the scene switch
+  if (currentScene)
+    currentScene.classList.add("hidden");
   newScene.classList.remove("hidden");
 
+  // Flag that a scene switch is in progress so user actions don't trigger an overlapping switch in the next bit of time
+  sceneSwitching = true;
   setTimeout(() => sceneSwitching = false, 250);
 }
 
@@ -181,17 +308,12 @@ function switchScene(newScene = MENU_SCENE) {
  * @param {KeyboardEvent} e
  */
 function navigateTextScenes(e) {
-  // Only execute in appropriate scenes
-  if (INSTRUCTIONS_SCENE.classList.contains("hidden") && CONTROLS_SCENE.classList.contains("hidden") &&
-    NAME_SCENE.classList.contains("hidden"))
-    return;
-
   switch (e.key) {
     case "z":
     case " ":
     case "Enter":
     case "Escape":
-      switchScene(lastScene);
+      switchScene();
       return;
 
     default:
@@ -221,12 +343,14 @@ function cycleSelect(selectEl) {
 
   // Find the selected option, then select the next one
   const lOptions = selectEl.querySelectorAll("option");
-  let iSelected = -1;
+
+  // Default to the first option if none are marked as selected
+  let iSelected = 0;
   lOptions.forEach((optionEl, i) => {
-    if (optionEl.hasAttribute("selected")) {
-      optionEl.removeAttribute("selected");
+    if (optionEl.value == selectEl.value) {
       iSelected = i;
     }
+    optionEl.removeAttribute("selected");
   });
 
   // Select the next option. If by chance no option was selected, going from -1 to 0 here will select the first
@@ -235,6 +359,7 @@ function cycleSelect(selectEl) {
     iSelected = 0;
   }
   lOptions[iSelected].setAttribute("selected", "true");
+  selectEl.value = lOptions[iSelected].value;
 
 }
 
@@ -282,9 +407,13 @@ const cookieData = getCookie();
 // ---------------------
 
 // Constant DOM references
+const NAME_SCENE_HEADER = document.getElementById("name-scene");
+
 const NAME_INPUT = document.getElementById("name-input");
+const NAME_REMEMBER_BOX = document.getElementById("remember-name");
 const NAME_SUBMIT = document.getElementById("name-submit");
-const NAME_REMEMBER = document.getElementById("remember-name");
+
+const L_NAME_OPTIONS = [NAME_INPUT, NAME_REMEMBER_BOX, NAME_SUBMIT];
 
 // Globals
 let naughtyPlayer = false;
@@ -297,20 +426,39 @@ function initNameScene() {
     NAME_INPUT.removeAttribute("disabled");
     setTimeout(() => NAME_INPUT.focus({ focusVisible: true }), 100);
   }
+  NAME_SCENE_HEADER.scrollIntoView();
+  window.addEventListener("keydown", navigateName);
 }
 
 function exitNameScene() {
   NAME_INPUT.setAttribute("disabled", "disabled");
+  window.removeEventListener("keydown", navigateName);
+}
+
+function saveSettings() {
+  // If any values aren't loaded in sessionStorage, set them now based on inputs
+  if (!sessionStorage.getItem("name"))
+    sessionStorage["name"] = NAME_INPUT.value;
+  if (!sessionStorage.getItem("numGuesses"))
+    sessionStorage["numGuesses"] = SETTINGS_GUESS_SELECT.value;
+  if (!sessionStorage.getItem("cardScale"))
+    sessionStorage["cardScale"] = SETTINGS_SCALE_SELECT.value;
+
+  setCookie({
+    name: sessionStorage["name"],
+    numGuesses: sessionStorage["numGuesses"],
+    cardScale: sessionStorage["cardScale"]
+  });
 }
 
 function setName(name) {
   sessionStorage["name"] = name;
-  MENU_NAME.textContent = name;
+  NAME_INPUT.value = name;
   document.querySelectorAll(".player-name").forEach((el) => el.textContent = name);
 
   // If the user desires, store the name in a cookie to remember it
-  if (NAME_REMEMBER.checked) {
-    setCookie({ name: name });
+  if (NAME_REMEMBER_BOX.checked) {
+    saveSettings();
   } else {
     // Otherwise delete any previously-set cookie
     deleteCookie();
@@ -330,7 +478,7 @@ function submitName(e) {
   if (e.type === "keydown" && e.key !== "Enter")
     return;
   setName(NAME_INPUT.value);
-  switchScene(lastScene);
+  switchScene();
   e.stopPropagation();
 }
 
@@ -347,6 +495,82 @@ function monitorName(e) {
   }
 }
 
+/**
+ * Sync the Remember Name and Remember Settings checkboxes
+ */
+function updateRememberName() {
+  SETTINGS_REMEMBER_BOX.checked = NAME_REMEMBER_BOX.checked;
+}
+
+
+/**
+ * Keyboard navigation for the name scene
+ * @param {KeyboardEvent} e 
+ */
+function navigateName(e) {
+  let currentIndex = L_NAME_OPTIONS.findIndex((el) => document.activeElement === el);
+
+  // Check the direction of navigation
+  let dir;
+  const el = document.activeElement;
+
+  switch (e.key) {
+    case "s":
+      if (el === NAME_INPUT)
+        return;
+    case "ArrowDown":
+      dir = 1;
+      e.stopPropagation();
+      e.preventDefault();
+      break;
+
+    case "w":
+      if (el === NAME_INPUT)
+        return;
+    case "ArrowUp":
+      dir = -1;
+      e.stopPropagation();
+      e.preventDefault();
+      break;
+
+    case " ":
+    case "z":
+      if (el === NAME_INPUT)
+        return;
+    case "Enter":
+      if (currentIndex === -1)
+        return;
+      e.stopPropagation();
+      e.preventDefault();
+      if (el == NAME_REMEMBER_BOX || el == NAME_SUBMIT) {
+        el.click()
+      } else {
+        NAME_SUBMIT.click();
+      }
+      return;
+
+    default:
+      return;
+  }
+
+  if (currentIndex == -1) {
+    // Not in the options currently, so go to the first
+    L_NAME_OPTIONS[0].focus({ focusVisible: true });
+    return;
+  }
+
+  // move to the next or previous item, and loop around if necessary
+  currentIndex += dir;
+  if (currentIndex < 0) {
+    currentIndex = L_NAME_OPTIONS.length - 1;
+  }
+  else if (currentIndex >= L_NAME_OPTIONS.length) {
+    currentIndex = 0;
+  }
+  L_NAME_OPTIONS[currentIndex].focus({ focusVisible: true });
+
+}
+
 // Setup
 // -----
 
@@ -354,17 +578,7 @@ NAME_INPUT.addEventListener("keydown", submitName);
 NAME_INPUT.addEventListener("keyup", monitorName);
 NAME_INPUT.addEventListener("change", monitorName);
 NAME_SUBMIT.addEventListener("click", submitName);
-
-// Check if the user's name is saved, and set the name entry scene to be skipped if so
-let initName = null;
-if (cookieData.name) {
-  // The user's name is stored in their cookie
-  initName = cookieData.name;
-  NAME_REMEMBER.checked = true;
-} else if (sessionStorage.getItem("name")) {
-  // The user set their name already in this browser session
-  initName = getName();
-}
+NAME_REMEMBER_BOX.addEventListener("change", updateRememberName);
 
 const nameSceneSwitchWatcher = new SceneSwitchWatcher(NAME_SCENE, initNameScene, exitNameScene);
 
@@ -376,13 +590,11 @@ const nameSceneSwitchWatcher = new SceneSwitchWatcher(NAME_SCENE, initNameScene,
 // ---------------------
 
 // Constant DOM references
-const MENU_NAME = document.getElementById("menu-name");
-
 const MENU_START_LINK = document.getElementById("menu-start");
-const MENU_NAME_LINK = document.getElementById("menu-edit-name");
+const MENU_SETTINGS_LINK = document.getElementById("menu-settings");
 const MENU_INSTRUCTIONS_LINK = document.getElementById("menu-instructions");
 const MENU_CREDITS_LINK = document.getElementById("menu-credits");
-const L_MENU_MAIN_OPTIONS = [MENU_START_LINK, MENU_NAME_LINK, MENU_INSTRUCTIONS_LINK, MENU_CREDITS_LINK];
+const L_MENU_MAIN_OPTIONS = [MENU_START_LINK, MENU_SETTINGS_LINK, MENU_INSTRUCTIONS_LINK, MENU_CREDITS_LINK];
 
 const MENU_CHARSET_LABEL = document.getElementById("charset-label");
 const MENU_CHARSET_SELECT = document.getElementById("charset-select");
@@ -418,6 +630,38 @@ function updateLoadingPercent() {
   document.querySelectorAll(".game-loading-percent").forEach(el => el.textContent = loadedPercent + "%");
 }
 
+function loadGuessIcons() {
+
+  const targetNumGuessIcons = sessionStorage.getItem("numGuesses");
+  lGuessIcons = document.querySelectorAll(".guess-icon");
+
+  // Check if we have the correct number of guesses, need to add some, or need to remove some
+  if (lGuessIcons.length > targetNumGuessIcons) {
+    // Remove guesses down to the correct number
+    lGuessIcons.forEach((el, i) => {
+      if (i >= targetNumGuessIcons)
+        el.remove();
+    });
+
+    lGuessIcons = document.querySelectorAll(".guess-icon");
+  } else if (lGuessIcons.length < targetNumGuessIcons) {
+    // Add guesses up to the correct number
+    for (let i = lGuessIcons.length; i < targetNumGuessIcons; ++i) {
+      GUESS_ICON_LINE.appendChild(lGuessIcons[0].cloneNode(true));
+    }
+    lGuessIcons = document.querySelectorAll(".guess-icon");
+  }
+
+  // Reset available guesses to all be active
+  lGuessIcons.forEach((el) => {
+    el.classList.add("active");
+    el.classList.remove("inactive");
+  });
+
+  // Connect all the icons to the event to flip them
+  lGuessIcons.forEach((el) => el.addEventListener("click", flipGuess));
+}
+
 async function startGame() {
   // If the game is already loading, exit to avoid doubling up
   if (gameLoading)
@@ -427,6 +671,8 @@ async function startGame() {
   updateLoadingPercent();
 
   document.querySelectorAll(".game-loading-message").forEach(el => el.classList.remove("hidden"));
+
+  loadGuessIcons();
 
   // Load the selected character set
   const setDirName = MENU_CHARSET_SELECT.value;
@@ -440,7 +686,8 @@ async function startGame() {
   // Make sure lookup mode starts disabled
   setOffLookupMode();
 
-  // Store a list of all focusable character card frames
+  // Store lists of focusable items
+  lGuessIcons = document.querySelectorAll(".guess-icon");
   lCharacterCardFrames = document.querySelectorAll(".character-card .character-img-frame");
   arrangeGameFocusableItems();
 
@@ -478,12 +725,6 @@ async function startGame() {
   // Start loading the image
   YOUR_CHAR_IMG.setAttribute("src", charsetPath + "/" + yourCharInfo.imgName);
 
-  // Reset available guesses
-  document.querySelectorAll(".guess-icon").forEach((el) => {
-    el.classList.add("active");
-    el.classList.remove("inactive");
-  });
-
   // Wait until all images are loaded before we switch to the game scene
   const interval = setInterval(() => {
     if (numImagesLoading > 0)
@@ -504,10 +745,6 @@ async function startGame() {
  * @param {KeyboardEvent} e 
  */
 function navigateMenu(e) {
-  // Only execute if the menu scene is active
-  if (MENU_SCENE.classList.contains("hidden"))
-    return;
-
   let currentIndex = L_MENU_OPTIONS.findIndex((el) => document.activeElement === el);
 
   // Check the direction of navigation
@@ -539,6 +776,8 @@ function navigateMenu(e) {
     case "Enter":
       if (currentIndex === -1)
         return;
+      e.stopPropagation();
+      e.preventDefault();
       const el = document.activeElement;
       if (el === MENU_CHARSET_LABEL) {
         cycleSelect(MENU_CHARSET_SELECT);
@@ -666,7 +905,7 @@ function fixMenuTabIndex() {
 // -----
 
 MENU_START_LINK.addEventListener("click", startGame);
-MENU_NAME_LINK.addEventListener("click", () => switchScene(NAME_SCENE));
+MENU_SETTINGS_LINK.addEventListener("click", () => switchScene(SETTINGS_SCENE));
 MENU_INSTRUCTIONS_LINK.addEventListener("click", () => switchScene(INSTRUCTIONS_SCENE));
 MENU_CREDITS_LINK.addEventListener("click", () => switchScene(CREDITS_SCENE));
 const menuSceneSwitchWatcher = new SceneSwitchWatcher(MENU_SCENE, initMenuScene, exitMenuScene);
@@ -693,17 +932,19 @@ const L_LOOKUP_BUTTONS = document.querySelectorAll(".game-lookup");
 const L_NOTES_BUTTONS = document.querySelectorAll(".game-notes");
 const L_CONTROLS_BUTTONS = document.querySelectorAll(".game-controls");
 const L_INSTRUCTIONS_BUTTONS = document.querySelectorAll(".game-instructions");
+const L_SETTINGS_BUTTONS = document.querySelectorAll(".game-settings");
 
+const GUESS_ICON_LINE = document.getElementById("guesses-line");
 const YOUR_CHAR_NAME = document.getElementById("your-char-name");
 const YOUR_CHAR_IMG_FRAME = document.getElementById("your-char-img-frame");
 const YOUR_CHAR_IMG = document.getElementById("your-char-img");
-const L_GUESS_ICONS = document.querySelectorAll(".guess-icon");
 
 const CARD_GRID = document.getElementById("card-grid");
 
 // Default configuration values
 const BODY_STYLE = window.getComputedStyle(document.body);
 const DEFAULT_LOOKUP_URL = "https://www.google.com/search?q=Undertale%20Deltarune%20%s&udm=14";
+const DEFAULT_NUM_GUESSES = document.querySelectorAll(".guess-icon").length;
 const DEFAULT_CARD_SCALE = +BODY_STYLE.getPropertyValue('--card-scale');
 const DEFAULT_CARD_WIDTH = parseInt(BODY_STYLE.getPropertyValue('--card-base-img-width')) * DEFAULT_CARD_SCALE;
 const DEFAULT_CARD_HEIGHT = parseInt(BODY_STYLE.getPropertyValue('--card-base-img-height')) * DEFAULT_CARD_SCALE;
@@ -724,6 +965,7 @@ let inspectScale = targetInspectScale;
 let inspectScaleAdjustInterval = null;
 
 let cardScaleInfo = null;
+let lGuessIcons = [];
 let lCharacterCardFrames = [];
 let lGameButtonsBeforePlayArea = null;
 let lGameButtonsAfterPlayArea = null;
@@ -915,6 +1157,17 @@ function updateNumChars() {
   });
 }
 
+function setCardScaleInfo() {
+  const scale = BODY_STYLE.getPropertyValue('--card-scale');
+  function getPxVal(x) {
+    return +(BODY_STYLE.getPropertyValue(x).replace("px", ""));
+  }
+  cardScaleInfo = {
+    width: scale * getPxVal('--card-base-img-width'),
+    height: scale * getPxVal('--card-base-img-height')
+  }
+}
+
 /**
  * Scale an image with the optimal scaling factor to fit in the provided frame
  * @param {HTMLImageElement} img 
@@ -922,36 +1175,25 @@ function updateNumChars() {
 function scaleImage(img, frameScale = 1) {
   // Determine card scale info if not already determined
   if (!cardScaleInfo) {
-    const style = window.getComputedStyle(CARD_GRID);
-    const scale = style.getPropertyValue('--card-scale');
-    function getPxVal(x) {
-      return +(style.getPropertyValue(x).replace("px", ""));
-    }
-    cardScaleInfo = {
-      width: scale * getPxVal('--card-base-img-width'),
-      height: scale * getPxVal('--card-base-img-height'),
-      borderWidth: scale * getPxVal('--card-base-border-width')
-    }
-    cardScaleInfo.totalWidth = cardScaleInfo.width + 2 * cardScaleInfo.borderWidth;
-    cardScaleInfo.totalHeight = cardScaleInfo.height + 2 * cardScaleInfo.borderWidth;
+    setCardScaleInfo();
   }
 
-  // The maximum size we want the scaled image to be is the width of the frame, so we find the integer scale factor that
-  // makes it as big as possible while still less than this size
+  // The maximum size we want the scaled image to be is the width of the card, so we find the half-integer scale factor
+  // that makes it as big as possible while still less than this size
 
   let width;
-  let naturalWidth = img.naturalWidth, totalWidth = cardScaleInfo.totalWidth;
+  let naturalWidth = img.naturalWidth, cardWidth = cardScaleInfo.width;
 
   if (naturalWidth == 0) {
     // Something went wrong with loading the image and we don't know its size, so size to the default image size
     width = cardScaleInfo.width;
-  } else if (naturalWidth > totalWidth) {
+  } else if (naturalWidth > cardWidth) {
     // We'll need to scale it down
-    let scaleDownFactor = Math.ceil(naturalWidth / totalWidth);
-    width = Math.round(naturalWidth / scaleDownFactor);
+    let scaleDownFactor = Math.ceil(naturalWidth / cardWidth);
+    width = 0.5 * Math.round(2 * naturalWidth / scaleDownFactor);
   } else {
     // We'll need to either leave it alone or scale it up
-    let scaleUpFactor = Math.floor(totalWidth / naturalWidth);
+    let scaleUpFactor = 0.5 * Math.floor(2 * cardWidth / naturalWidth);
     width = naturalWidth * scaleUpFactor;
   }
 
@@ -1128,6 +1370,7 @@ async function loadCharacterSet(setDirName) {
       if (e.button == 1 || e.buttons == 4)
         toggleInspectCard(e);
     });
+    inspectEl.addEventListener("contextmenu", markCard, false);
     inspectEl.addEventListener("wheel", (e) => {
       if (e.deltaY > 0) {
         e.preventDefault();
@@ -1369,14 +1612,14 @@ function decreaseInspectScale() {
  */
 function arrangeGameFocusableItems() {
   if (window.innerWidth <= SCREEN_SIZE_BREAKPOINT) {
-    lGameButtonsBeforePlayArea = [QUIT_GAME_BUTTON, RESTART_GAME_BUTTON,
-      L_LOOKUP_BUTTONS[0], L_NOTES_BUTTONS[0], L_CONTROLS_BUTTONS[0], L_INSTRUCTIONS_BUTTONS[0]];
+    lGameButtonsBeforePlayArea = [QUIT_GAME_BUTTON, RESTART_GAME_BUTTON, L_LOOKUP_BUTTONS[0],
+      L_NOTES_BUTTONS[0], L_CONTROLS_BUTTONS[0], L_INSTRUCTIONS_BUTTONS[0], L_SETTINGS_BUTTONS[0]];
     lGameButtonsAfterPlayArea = [];
   } else {
     lGameButtonsBeforePlayArea = [QUIT_GAME_BUTTON, RESTART_GAME_BUTTON, L_LOOKUP_BUTTONS[1], L_NOTES_BUTTONS[1]];
-    lGameButtonsAfterPlayArea = [L_CONTROLS_BUTTONS[1], L_INSTRUCTIONS_BUTTONS[1]];
+    lGameButtonsAfterPlayArea = [L_CONTROLS_BUTTONS[1], L_INSTRUCTIONS_BUTTONS[1], L_SETTINGS_BUTTONS[1]];
   }
-  lGameFocusableItems = [...lGameButtonsBeforePlayArea, ...L_GUESS_ICONS, ...lCharacterCardFrames,
+  lGameFocusableItems = [...lGameButtonsBeforePlayArea, ...lGuessIcons, ...lCharacterCardFrames,
   ...lGameButtonsAfterPlayArea];
 }
 
@@ -1385,15 +1628,11 @@ function arrangeGameFocusableItems() {
  * @param {KeyboardEvent} e 
  */
 function navigateGame(e) {
-  // Only execute if the game scene is active
-  if (GAME_SCENE.classList.contains("hidden"))
-    return;
-
   // Get current position
   let currentIndex = lGameFocusableItems.findIndex((el) => document.activeElement === el);
 
   const numButtonsBeforePlayArea = lGameButtonsBeforePlayArea.length;
-  const numGuessIcons = L_GUESS_ICONS.length;
+  const numGuessIcons = lGuessIcons.length;
   const numCharacterCards = lCharacterCardFrames.length;
   const numFocusable = lGameFocusableItems.length;
 
@@ -1596,8 +1835,8 @@ GAME_NOTES_CLOSE.addEventListener("click", closeNotes);
 
 L_CONTROLS_BUTTONS.forEach((el) => el.addEventListener("click", () => switchScene(CONTROLS_SCENE)));
 L_INSTRUCTIONS_BUTTONS.forEach((el) => el.addEventListener("click", () => switchScene(INSTRUCTIONS_SCENE)));
+L_SETTINGS_BUTTONS.forEach((el) => el.addEventListener("click", () => switchScene(SETTINGS_SCENE)));
 
-L_GUESS_ICONS.forEach((el) => el.addEventListener("click", flipGuess));
 // Character cards are added dynamically, so the click event to flip them has to be added when they're added
 
 const gameSceneSwitchWatcher = new SceneSwitchWatcher(GAME_SCENE, initGameScene, exitGameScene);
@@ -1629,7 +1868,7 @@ function exitInstructionsScene() {
 // Setup
 // -----
 
-INSTRUCTIONS_BACK_BUTTON.addEventListener("click", () => switchScene(lastScene));
+INSTRUCTIONS_BACK_BUTTON.addEventListener("click", switchScene);
 const instructionsSceneSwitchWatcher = new SceneSwitchWatcher(INSTRUCTIONS_SCENE,
   initInstructionsScene, exitInstructionsScene);
 
@@ -1660,8 +1899,171 @@ function exitControlsScene() {
 // Setup
 // -----
 
-CONTROLS_BACK_BUTTON.addEventListener("click", () => switchScene(lastScene));
+CONTROLS_BACK_BUTTON.addEventListener("click", switchScene);
 const controlsSceneSwitchWatcher = new SceneSwitchWatcher(CONTROLS_SCENE, initControlsScene, exitControlsScene);
+
+
+// Settings scene
+// ==============
+
+// Constants and globals
+// ---------------------
+
+// Constant DOM references
+const SETTINGS_SCENE_HEADER = document.getElementById("settings-scene");
+
+const SETTINGS_NAME_LINK = document.getElementById("settings-edit-name");
+const SETTINGS_GUESS_LABEL = document.getElementById("num-guesses-label");
+const SETTINGS_GUESS_SELECT = document.getElementById("num-guesses-select");
+const SETTINGS_SCALE_LABEL = document.getElementById("card-scale-label");
+const SETTINGS_SCALE_SELECT = document.getElementById("card-scale-select");
+const SETTINGS_SCALE_IMG = document.getElementById("example-character-img");
+const SETTINGS_REMEMBER_BOX = document.getElementById("remember-settings");
+
+const SETTINGS_RESTORE_DEFAULT_BUTTON = document.getElementById("settings-restore-default");
+const SETTINGS_RESTORE_INIT_BUTTON = document.getElementById("settings-restore-init");
+const SETTINGS_BACK_BUTTON = document.getElementById("settings-back");
+
+const L_SETTINGS_OPTIONS = [SETTINGS_NAME_LINK, SETTINGS_GUESS_LABEL, SETTINGS_SCALE_LABEL, SETTINGS_REMEMBER_BOX,
+  SETTINGS_RESTORE_DEFAULT_BUTTON, SETTINGS_RESTORE_INIT_BUTTON, SETTINGS_BACK_BUTTON];
+
+const SETTINGS_EXAMPLE_CARD = document.getElementById("example-character-card");
+
+
+// Functions
+// ---------
+
+function initSettingsScene() {
+  SETTINGS_NAME_LINK.focus({ focusVisible: true });
+  SETTINGS_SCENE_HEADER.scrollIntoView();
+  window.addEventListener("keydown", navigateSettings);
+}
+
+function exitSettingsScene() {
+  window.removeEventListener("keydown", navigateSettings);
+
+  // Save settings on exiting the scene
+  sessionStorage["numGuesses"] = SETTINGS_GUESS_SELECT.value;
+  sessionStorage["cardScale"] = SETTINGS_SCALE_SELECT.value;
+
+  // If the user desires, store the value in a cookie to remember it
+  if (SETTINGS_REMEMBER_BOX.checked) {
+    saveSettings();
+  } else {
+    // Otherwise delete any previously-set cookie
+    deleteCookie();
+  }
+}
+
+/**
+ * Update the CSS card scale property and the example card image
+ */
+function updateCardScale() {
+  document.documentElement.style.setProperty("--card-scale", SETTINGS_SCALE_SELECT.value);
+  setCardScaleInfo();
+  scaleImage(SETTINGS_SCALE_IMG);
+  scaleImage(YOUR_CHAR_IMG, window.getComputedStyle(YOUR_CHAR_IMG).getPropertyValue('--your-char-scale'))
+  document.querySelectorAll(".character-img").forEach((el) => scaleImage(el));
+  const inspectImgScale = window.getComputedStyle(YOUR_CHAR_IMG).getPropertyValue('--your-char-scale');
+  document.querySelectorAll(".inspect-img").forEach((el) => scaleImage(el, inspectImgScale));
+}
+
+/**
+ * Sync the Remember Name and Remember Settings checkboxes
+ */
+function updateRememberSettings() {
+  NAME_REMEMBER_BOX.checked = SETTINGS_REMEMBER_BOX.checked;
+}
+
+function restoreDefaultSettings() {
+  setSelectByValue(SETTINGS_GUESS_SELECT, DEFAULT_NUM_GUESSES);
+  setSelectByValue(SETTINGS_SCALE_SELECT, DEFAULT_CARD_SCALE);
+  updateCardScale();
+}
+
+function restoreInitSettings() {
+  setSelectByValue(SETTINGS_GUESS_SELECT, initSettings["numGuesses"]);
+  setSelectByValue(SETTINGS_SCALE_SELECT, initSettings["cardScale"]);
+  updateCardScale();
+}
+
+/**
+ * Keyboard navigation for the settings scene
+ * @param {KeyboardEvent} e 
+ */
+function navigateSettings(e) {
+  let currentIndex = L_SETTINGS_OPTIONS.findIndex((el) => document.activeElement === el);
+
+  // Check the direction of navigation
+  let dir;
+
+  switch (e.key) {
+    case "ArrowDown":
+    case "ArrowRight":
+    case "s":
+    case "d":
+      dir = 1;
+      break;
+
+    case "ArrowUp":
+    case "ArrowLeft":
+    case "w":
+    case "a":
+      dir = -1;
+      break;
+
+    case " ":
+    case "z":
+    case "Enter":
+      if (currentIndex === -1)
+        return;
+      e.stopPropagation();
+      e.preventDefault();
+      const el = document.activeElement;
+      if (el == SETTINGS_GUESS_LABEL) {
+        cycleSelect(SETTINGS_GUESS_SELECT);
+      } else if (el == SETTINGS_SCALE_LABEL) {
+        cycleSelect(SETTINGS_SCALE_SELECT);
+        updateCardScale();
+      } else {
+        el.click();
+      }
+      return;
+
+    default:
+      return;
+  }
+
+  if (currentIndex == -1) {
+    // Not in the options currently, so go to the first
+    L_SETTINGS_OPTIONS[0].focus({ focusVisible: true });
+    return;
+  }
+
+  // move to the next or previous item, and loop around if necessary
+  currentIndex += dir;
+  if (currentIndex < 0) {
+    currentIndex = L_SETTINGS_OPTIONS.length - 1;
+  }
+  else if (currentIndex >= L_SETTINGS_OPTIONS.length) {
+    currentIndex = 0;
+  }
+  L_SETTINGS_OPTIONS[currentIndex].focus({ focusVisible: true });
+
+}
+
+// Setup
+// -----
+
+SETTINGS_NAME_LINK.addEventListener("click", () => switchScene(NAME_SCENE));
+SETTINGS_SCALE_SELECT.addEventListener("change", updateCardScale);
+SETTINGS_REMEMBER_BOX.addEventListener("change", updateRememberSettings);
+
+SETTINGS_RESTORE_DEFAULT_BUTTON.addEventListener("click", restoreDefaultSettings);
+SETTINGS_RESTORE_INIT_BUTTON.addEventListener("click", restoreInitSettings);
+SETTINGS_BACK_BUTTON.addEventListener("click", switchScene);
+
+const settingsSceneSwitchWatcher = new SceneSwitchWatcher(SETTINGS_SCENE, initSettingsScene, exitSettingsScene);
 
 
 // Credits scene
@@ -1690,14 +2092,24 @@ function exitCreditsScene() {
 // Setup
 // -----
 
-CREDITS_BACK_BUTTON.addEventListener("click", () => switchScene(lastScene));
+CREDITS_BACK_BUTTON.addEventListener("click", switchScene);
 const creditsSceneSwitchWatcher = new SceneSwitchWatcher(CREDITS_SCENE, initCreditsScene, exitCreditsScene);
 
 
 // Final setup
 // ===========
 window.onload = function () {
-  lastScene = MENU_SCENE;
+  lSceneStack.push(MENU_SCENE);
+
+  // Get the saved name, if any. If it's found in the cookie, set the "remember" boxes to be checked
+  loadSetting("name", null, null,
+    () => { NAME_REMEMBER_BOX.checked = true; SETTINGS_REMEMBER_BOX.checked = true },
+    () => { NAME_REMEMBER_BOX.checked = false; SETTINGS_REMEMBER_BOX.checked = false });
+
+  // Get and apply other saved settings
+  loadSetting("numGuesses", () => setSelectByValue(SETTINGS_GUESS_SELECT, initSettings.numGuesses));
+  loadSetting("cardScale", () => setSelectByValue(SETTINGS_SCALE_SELECT, initSettings.cardScale));
+  updateCardScale();
 
   fixMenuTabIndex();
   loadCharacterSetList().then(() => {
@@ -1707,12 +2119,13 @@ window.onload = function () {
       MENU_START_LINK.focus({ focusVisible: true });
   });
 
-  if (initName) {
-    setName(initName);
-    NAME_INPUT.value = getName();
-    switchScene(MENU_SCENE);
+  if (initSettings.name) {
+    setName(initSettings.name);
+    MENU_SCENE.classList.remove("hidden");
   } else {
     switchScene(NAME_SCENE);
     NAME_INPUT.focus({ focusVisible: true });
   }
+
+  updateRememberName();
 }
