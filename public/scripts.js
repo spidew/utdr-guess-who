@@ -681,6 +681,7 @@ async function startGame() {
     gameLoading = false;
     return;
   }
+  loadedCharset = null;
   await loadCharacterSet(setDirName);
 
   // Make sure lookup mode starts disabled
