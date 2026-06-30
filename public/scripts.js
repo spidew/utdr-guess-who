@@ -1311,6 +1311,12 @@ async function loadCharacterSet(setDirName) {
 
   // Get the info for each character
   const lAllChars = [...lSortedChars, ...lUnsortedChars];
+
+  // Fisher-Yates shuffle
+  for (let i = lAllChars.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [lAllChars[i], lAllChars[j]] = [lAllChars[j], lAllChars[i]];
+  }
   lCharInfo = [];
   const inspectImgScale = window.getComputedStyle(YOUR_CHAR_IMG).getPropertyValue('--your-char-scale');
   lAllChars.forEach((charInfo) => {
